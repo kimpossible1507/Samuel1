@@ -11,22 +11,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1) Descomprimir el proyecto que subiste como ZIP
+      # Descomprime el proyecto
       - name: Unzip project
         run: |
           unzip PlantasSamuel_Starter.zip -d .
           mv PlantasSamuel/* .
           rm -rf PlantasSamuel
 
-      # 2) JDK 17
+      # JDK 17
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
-      # 3) Instalar manualmente Android cmdline-tools y paquetes necesarios
-      - name: Install Android SDK (cmdline-tools + packages)
+      # Android SDK manual + fallbacks
+      - name: Install Android SDK (cmdline-tools + packages con fallback)
         env:
           ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
         run: |
@@ -35,16 +35,32 @@ jobs:
           curl -sLo cmdline-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
           unzip -q cmdline-tools.zip -d "$ANDROID_SDK_ROOT/cmdline-tools"
           mv "$ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
-          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_SDK_ROOT" --licenses
-          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$ANDROID_SDK_ROOT" \
-            "platform-tools" "platforms;android-34" "build-tools;34.0.2"
+          SDKMAN="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
 
-      # 4) Ajuste de versión del compilador de Compose para Kotlin 2.0
+          # Aceptar licencias
+          yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" --licenses
+
+          # Intentar plataforma 34; si no existe, cambiamos el proyecto a 33 y usamos plataforma 33
+          if ! yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" "platforms;android-34" ; then
+            sed -i 's/compileSdk = 34/compileSdk = 33/' app/build.gradle.kts
+            sed -i 's/targetSdk = 34/targetSdk = 33/' app/build.gradle.kts
+            yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" "platforms;android-33"
+          fi
+
+          # Siempre instalar platform-tools
+          yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" "platform-tools"
+
+          # Fallback de build-tools: 34.0.2 -> 34.0.0 -> 33.0.2
+          yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" "build-tools;34.0.2" || \
+          yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" "build-tools;34.0.0" || \
+          yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" "build-tools;33.0.2"
+
+      # Ajuste del compilador de Compose para Kotlin 2.0
       - name: Patch Compose Compiler version
         run: |
           sed -i 's/kotlinCompilerExtensionVersion = "1.5.15"/kotlinCompilerExtensionVersion = "1.6.10"/' app/build.gradle.kts
 
-      # 5) Instalar Gradle 8.7 y compilar
+      # Gradle 8.7 y build
       - name: Install Gradle 8.7
         run: |
           curl -sLo gradle.zip https://services.gradle.org/distributions/gradle-8.7-bin.zip
@@ -57,7 +73,6 @@ jobs:
           ANDROID_HOME: ${{ runner.temp }}/android-sdk
         run: gradle :app:assembleDebug --no-daemon
 
-      # 6) Publicar el APK
       - name: Publicar APK como artefacto
         uses: actions/upload-artifact@v4
         with:
