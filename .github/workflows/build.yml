@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1) Descomprime el proyecto (asegúrate que el ZIP se llame así)
+      # 1) Descomprime el proyecto (el ZIP debe llamarse así)
       - name: Unzip project
         run: |
           unzip PlantasSamuel_Starter.zip -d .
@@ -51,7 +51,7 @@ jobs:
           yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" "build-tools;34.0.0" || \
           yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" "build-tools;33.0.2"
 
-      # 4) Activar Compose (Kotlin 2.0) y fijar compiler en :app
+      # 4) Activar Compose (Kotlin 2.0) y ajustar compiler en :app
       - name: Patch Kotlin/Compose (root + :app)
         run: |
           # Compiler de Compose compatible con Kotlin 2.0
@@ -77,7 +77,7 @@ jobs:
             grep -q '^android.enableJetifier=true' gradle.properties || echo 'android.enableJetifier=true' >> gradle.properties
           fi
 
-      # 6) Añadir @file:OptIn(...) al inicio y @OptIn(...) en PlantasSamuelApp()
+      # 6) Añadir @file:OptIn(...) y @OptIn(...) para APIs experimentales
       - name: Add OptIn annotations for experimental APIs
         run: |
           FILE=app/src/main/java/com/samuel/plantassamuel/MainActivity.kt
@@ -94,15 +94,19 @@ jobs:
             mv "$TMP" "$FILE"
           fi
 
-          # Opt-in sobre la función @Composable fun PlantasSamuelApp()
-          # (por si el compilador no respeta el file-level en este runner)
+          # Opt-in sobre la función PlantasSamuelApp(), por si el file-level no basta
           if grep -q '@Composable[[:space:]]*fun[[:space:]]*PlantasSamuelApp' "$FILE"; then
-            # Inserta las anotaciones justo debajo de @Composable
             sed -i '/@Composable[[:space:]]*fun[[:space:]]*PlantasSamuelApp/ i @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)' "$FILE"
             sed -i '/@Composable[[:space:]]*fun[[:space:]]*PlantasSamuelApp/ i @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)' "$FILE"
           fi
 
-      # 7) Instalar Gradle 8.7 y compilar
+      # 7) Forzar opt-in también desde el compilador (freeCompilerArgs)
+      - name: Force compiler opt-ins via Gradle
+        run: |
+          # Inserta los -opt-in dentro del bloque kotlinOptions { ... }
+          sed -i '/kotlinOptions[[:space:]]*{/,/}/ s/jvmTarget = "17"/jvmTarget = "17"\n        freeCompilerArgs += listOf(\n            "-opt-in=androidx.compose.material3.ExperimentalMaterial3Api",\n            "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi"\n        )/' app/build.gradle.kts
+
+      # 8) Instalar Gradle 8.7 y compilar
       - name: Install Gradle 8.7
         run: |
           curl -sLo gradle.zip https://services.gradle.org/distributions/gradle-8.7-bin.zip
@@ -115,7 +119,7 @@ jobs:
           ANDROID_HOME: ${{ runner.temp }}/android-sdk
         run: gradle :app:assembleDebug --no-daemon
 
-      # 8) Publicar APK
+      # 9) Publicar APK
       - name: Publicar APK como artefacto
         uses: actions/upload-artifact@v4
         with:
