@@ -25,7 +25,7 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      # 3) Android SDK manual con fallbacks (cmdline-tools, plataformas y build-tools)
+      # 3) Android SDK manual con fallbacks
       - name: Install Android SDK (cmdline-tools + packages con fallback)
         env:
           ANDROID_SDK_ROOT: ${{ runner.temp }}/android-sdk
@@ -55,19 +55,16 @@ jobs:
           yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" "build-tools;34.0.0" || \
           yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" "build-tools;33.0.2"
 
-      # 4) Activar plugin Compose para Kotlin 2.0 y fijar compiler ext compatible
-      - name: Patch Kotlin/Compose (plugin + compiler)
+      # 4) Activar Compose para Kotlin 2.0 SOLO en :app (sin tocar el gradle raíz)
+      - name: Patch Kotlin/Compose (plugin + compiler en :app)
         run: |
-          # Si el proyecto trae 1.5.15, cámbiala a 1.6.10 (compatible con Kotlin 2.0)
+          # Asegura el Compose Compiler compatible con Kotlin 2.0
           sed -i 's/kotlinCompilerExtensionVersion = "1.5.15"/kotlinCompilerExtensionVersion = "1.6.10"/' app/build.gradle.kts || true
 
-          # TOP-LEVEL build.gradle.kts: añade el plugin de Compose
-          sed -i 's/id("org.jetbrains.kotlin.android") version "2.0.0" apply false/&\
-    id("org.jetbrains.kotlin.plugin.compose") version "2.0.0" apply false/' build.gradle.kts
-
-          # app/build.gradle.kts: aplica el plugin en el módulo :app
-          sed -i 's/id("org.jetbrains.kotlin.android")/id("org.jetbrains.kotlin.android")\
-    id("org.jetbrains.kotlin.plugin.compose")/' app/build.gradle.kts
+          # Añade el plugin compose en el bloque plugins del módulo :app si no existe
+          if ! grep -q 'org.jetbrains.kotlin.plugin.compose' app/build.gradle.kts; then
+            sed -i '/id("org.jetbrains.kotlin.android")/s/$/\n    id("org.jetbrains.kotlin.plugin.compose")/' app/build.gradle.kts
+          fi
 
       # 5) Instalar Gradle 8.7 y compilar
       - name: Install Gradle 8.7
