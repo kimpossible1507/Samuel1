@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1) Descomprime el proyecto (asegúrate que el ZIP se llame igual)
+      # 1) Descomprime el proyecto (asegúrate que el ZIP se llame así)
       - name: Unzip project
         run: |
           unzip PlantasSamuel_Starter.zip -d .
@@ -67,7 +67,7 @@ jobs:
             sed -i '/id("org.jetbrains.kotlin.android")/a\    id("org.jetbrains.kotlin.plugin.compose")' app/build.gradle.kts
           fi
 
-      # 5) Habilitar AndroidX (crea/actualiza gradle.properties)
+      # 5) Habilitar AndroidX
       - name: Enable AndroidX flags
         run: |
           if [ ! -f gradle.properties ]; then
@@ -77,10 +77,12 @@ jobs:
             grep -q '^android.enableJetifier=true' gradle.properties || echo 'android.enableJetifier=true' >> gradle.properties
           fi
 
-      # 6) Añadir @file:OptIn(...) al principio de MainActivity.kt (para APIs experimentales M3)
-      - name: Add file-level OptIn for experimental APIs
+      # 6) Añadir @file:OptIn(...) al inicio y @OptIn(...) en PlantasSamuelApp()
+      - name: Add OptIn annotations for experimental APIs
         run: |
           FILE=app/src/main/java/com/samuel/plantassamuel/MainActivity.kt
+
+          # Opt-in a nivel de archivo (antes de package)
           if ! grep -q 'ExperimentalMaterial3Api' "$FILE"; then
             TMP=$(mktemp)
             printf "%s\n" "@file:OptIn(" \
@@ -90,6 +92,14 @@ jobs:
             printf "\n" >> "$TMP"
             cat "$FILE" >> "$TMP"
             mv "$TMP" "$FILE"
+          fi
+
+          # Opt-in sobre la función @Composable fun PlantasSamuelApp()
+          # (por si el compilador no respeta el file-level en este runner)
+          if grep -q '@Composable[[:space:]]*fun[[:space:]]*PlantasSamuelApp' "$FILE"; then
+            # Inserta las anotaciones justo debajo de @Composable
+            sed -i '/@Composable[[:space:]]*fun[[:space:]]*PlantasSamuelApp/ i @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)' "$FILE"
+            sed -i '/@Composable[[:space:]]*fun[[:space:]]*PlantasSamuelApp/ i @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)' "$FILE"
           fi
 
       # 7) Instalar Gradle 8.7 y compilar
