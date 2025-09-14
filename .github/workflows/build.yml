@@ -39,7 +39,7 @@ jobs:
 
           yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" --licenses
 
-          # Plataforma 34; si falla, pasamos el proyecto a 33
+          # Plataforma 34; si falla, pasar el proyecto a 33
           if ! yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" "platforms;android-34" ; then
             sed -i 's/compileSdk = 34/compileSdk = 33/' app/build.gradle.kts
             sed -i 's/targetSdk = 34/targetSdk = 33/' app/build.gradle.kts
@@ -47,29 +47,37 @@ jobs:
           fi
 
           yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" "platform-tools"
-
-          # Build-tools con fallback
           yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" "build-tools;34.0.2" || \
           yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" "build-tools;34.0.0" || \
           yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" "build-tools;33.0.2"
 
-      # 4) Activar Compose: declarar plugin en raíz (con versión) y aplicarlo en :app
+      # 4) Activar Compose y fijar compiler en :app
       - name: Patch Kotlin/Compose (root + :app)
         run: |
-          # Compiler de Compose compatible con Kotlin 2.0
           sed -i 's/kotlinCompilerExtensionVersion = "1.5.15"/kotlinCompilerExtensionVersion = "1.6.10"/' app/build.gradle.kts || true
-
-          # build.gradle.kts (raíz): declarar plugin con versión si no existe
           if ! grep -q 'org.jetbrains.kotlin.plugin.compose' build.gradle.kts; then
             sed -i '/id("org.jetbrains.kotlin.android") version "2.0.0" apply false/a\    id("org.jetbrains.kotlin.plugin.compose") version "2.0.0" apply false' build.gradle.kts
           fi
-
-          # app/build.gradle.kts: aplicar el plugin si no está aplicado
           if ! grep -q 'org.jetbrains.kotlin.plugin.compose' app/build.gradle.kts; then
             sed -i '/id("org.jetbrains.kotlin.android")/a\    id("org.jetbrains.kotlin.plugin.compose")' app/build.gradle.kts
           fi
 
-      # 5) Instalar Gradle 8.7 y compilar
+      # 5) Habilitar AndroidX (crea/actualiza gradle.properties)
+      - name: Enable AndroidX flags
+        run: |
+          if [ ! -f gradle.properties ]; then
+            cat > gradle.properties <<'EOF'
+android.useAndroidX=true
+android.enableJetifier=true
+org.gradle.jvmargs=-Xmx2g -Dfile.encoding=UTF-8
+kotlin.code.style=official
+EOF
+          else
+            grep -q '^android.useAndroidX=true' gradle.properties || echo 'android.useAndroidX=true' >> gradle.properties
+            grep -q '^android.enableJetifier=true' gradle.properties || echo 'android.enableJetifier=true' >> gradle.properties
+          fi
+
+      # 6) Instalar Gradle 8.7 y compilar
       - name: Install Gradle 8.7
         run: |
           curl -sLo gradle.zip https://services.gradle.org/distributions/gradle-8.7-bin.zip
@@ -82,7 +90,7 @@ jobs:
           ANDROID_HOME: ${{ runner.temp }}/android-sdk
         run: gradle :app:assembleDebug --no-daemon
 
-      # 6) Publicar APK
+      # 7) Publicar APK
       - name: Publicar APK como artefacto
         uses: actions/upload-artifact@v4
         with:
