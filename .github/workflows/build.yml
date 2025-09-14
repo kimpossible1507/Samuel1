@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 1) Descomprime el proyecto (asegúrate de que el ZIP se llame igual)
+      # 1) Descomprime el proyecto (asegúrate que el ZIP se llame así)
       - name: Unzip project
         run: |
           unzip PlantasSamuel_Starter.zip -d .
@@ -37,33 +37,36 @@ jobs:
           mv "$ANDROID_SDK_ROOT/cmdline-tools/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
           SDKMAN="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
 
-          # Aceptar licencias
           yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" --licenses
 
-          # Plataforma API 34; si falla, bajar a 33 y parchear el proyecto
+          # Plataforma 34; si falla, pasamos el proyecto a 33
           if ! yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" "platforms;android-34" ; then
             sed -i 's/compileSdk = 34/compileSdk = 33/' app/build.gradle.kts
             sed -i 's/targetSdk = 34/targetSdk = 33/' app/build.gradle.kts
             yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" "platforms;android-33"
           fi
 
-          # Platform-tools siempre
           yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" "platform-tools"
 
-          # Build-tools con fallback (intenta varias versiones)
+          # Build-tools con fallback
           yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" "build-tools;34.0.2" || \
           yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" "build-tools;34.0.0" || \
           yes | "$SDKMAN" --sdk_root="$ANDROID_SDK_ROOT" "build-tools;33.0.2"
 
-      # 4) Activar Compose para Kotlin 2.0 SOLO en :app (sin tocar el gradle raíz)
-      - name: Patch Kotlin/Compose (plugin + compiler en :app)
+      # 4) Activar Compose: declarar plugin en raíz (con versión) y aplicarlo en :app
+      - name: Patch Kotlin/Compose (root + :app)
         run: |
-          # Asegura el Compose Compiler compatible con Kotlin 2.0
+          # Compiler de Compose compatible con Kotlin 2.0
           sed -i 's/kotlinCompilerExtensionVersion = "1.5.15"/kotlinCompilerExtensionVersion = "1.6.10"/' app/build.gradle.kts || true
 
-          # Añade el plugin compose en el bloque plugins del módulo :app si no existe
+          # build.gradle.kts (raíz): declarar plugin con versión si no existe
+          if ! grep -q 'org.jetbrains.kotlin.plugin.compose' build.gradle.kts; then
+            sed -i '/id("org.jetbrains.kotlin.android") version "2.0.0" apply false/a\    id("org.jetbrains.kotlin.plugin.compose") version "2.0.0" apply false' build.gradle.kts
+          fi
+
+          # app/build.gradle.kts: aplicar el plugin si no está aplicado
           if ! grep -q 'org.jetbrains.kotlin.plugin.compose' app/build.gradle.kts; then
-            sed -i '/id("org.jetbrains.kotlin.android")/s/$/\n    id("org.jetbrains.kotlin.plugin.compose")/' app/build.gradle.kts
+            sed -i '/id("org.jetbrains.kotlin.android")/a\    id("org.jetbrains.kotlin.plugin.compose")' app/build.gradle.kts
           fi
 
       # 5) Instalar Gradle 8.7 y compilar
@@ -79,7 +82,7 @@ jobs:
           ANDROID_HOME: ${{ runner.temp }}/android-sdk
         run: gradle :app:assembleDebug --no-daemon
 
-      # 6) Publicar el APK como artefacto descargable
+      # 6) Publicar APK
       - name: Publicar APK como artefacto
         uses: actions/upload-artifact@v4
         with:
